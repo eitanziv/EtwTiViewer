@@ -177,6 +177,8 @@ TiEvent PipeClient::ParseMessage(
     ev.timestamp.dwLowDateTime  = static_cast<DWORD>(hdr.Timestamp & 0xFFFFFFFF);
     ev.timestamp.dwHighDateTime = static_cast<DWORD>(hdr.Timestamp >> 32);
     ev.eventId = hdr.EventId;
+    ev.task    = hdr.Task;
+    ev.keyword = hdr.Keyword;
     ev.pid     = hdr.Pid;
     ev.tid     = hdr.Tid;
     ev.name.assign(reinterpret_cast<const char*>(nameBytes), hdr.NameLen);

@@ -24,49 +24,80 @@ static const GUID kEtwTiGuid = {
 };
 
 // ============================================================================
-// Event-ID to name table (matches ntoskrnl's ETW-TI manifest)
+// Task ID → operation name and Keyword bitmask → variant suffix
+//
+// Task IDs verified against repnz/etw-providers-docs manifest and
+// fluxsec.red ETW-TI implementation.
 // ============================================================================
 
-static const char* EtwTiEventName(USHORT id)
+static const char* TaskToString(USHORT task)
 {
-    static const char* kNames[] = {
-        nullptr,                               // 0  (unused)
-        "ALLOCVM_LOCAL",                       // 1
-        "ALLOCVM_LOCAL_KERNEL_CALLER",         // 2
-        "ALLOCVM_REMOTE",                      // 3
-        "ALLOCVM_REMOTE_KERNEL_CALLER",        // 4
-        "PROTECTVM_LOCAL",                     // 5
-        "PROTECTVM_LOCAL_KERNEL_CALLER",       // 6
-        "PROTECTVM_REMOTE",                    // 7
-        "PROTECTVM_REMOTE_KERNEL_CALLER",      // 8
-        "MAPVIEW_LOCAL",                       // 9
-        "MAPVIEW_LOCAL_KERNEL_CALLER",         // 10
-        "MAPVIEW_REMOTE",                      // 11
-        "MAPVIEW_REMOTE_KERNEL_CALLER",        // 12
-        "QUEUEUSERAPC_REMOTE",                 // 13
-        "QUEUEUSERAPC_REMOTE_KERNEL_CALLER",   // 14
-        "SETTHREADCONTEXT_REMOTE",             // 15
-        "SETTHREADCONTEXT_REMOTE_KERNEL_CALLER", // 16
-        "READVM_LOCAL",                        // 17
-        "READVM_REMOTE",                       // 18
-        "WRITEVM_LOCAL",                       // 19
-        "WRITEVM_REMOTE",                      // 20
-        "SUSPEND_THREAD",                      // 21
-        "RESUME_THREAD",                       // 22
-        "SUSPEND_PROCESS",                     // 23
-        "RESUME_PROCESS",                      // 24
-        "FREEZE_PROCESS",                      // 25
-        "THAW_PROCESS",                        // 26
-        "CONTEXT_PARSE",                       // 27
-        "EXECUTION_ADDRESS_VAD_PROBE",         // 28
-        "EXECUTION_ADDRESS_MMF_NAME_PROBE",    // 29
-        "READWRITEVM_NO_SIGNATURE_RESTRICTION",// 30
-        "DRIVER_EVENTS",                       // 31
-        "DEVICE_EVENTS",                       // 32
-    };
-    if (id < (USHORT)(sizeof(kNames) / sizeof(kNames[0])) && kNames[id])
-        return kNames[id];
-    return nullptr;
+    switch (task) {
+        case 1:  return "ALLOCVM";
+        case 2:  return "PROTECTVM";
+        case 3:  return "MAPVIEW";
+        case 4:  return "QUEUEUSERAPC";
+        case 5:  return "SETTHREADCONTEXT";
+        case 6:  return "READVM";
+        case 7:  return "WRITEVM";
+        case 8:  return "SUSPENDRESUME_THREAD";
+        case 9:  return "SUSPENDRESUME_PROCESS";
+        case 10: return "DRIVER_DEVICE";
+        default: return "UNKNOWN";
+    }
+}
+
+static std::string KeywordToSuffix(USHORT task, ULONGLONG keyword)
+{
+    switch (task) {
+    case 1: /* ALLOCVM — bits 0x1/0x2/0x4/0x8 */
+        if (keyword & 0x8ULL) return "_REMOTE_KERNEL_CALLER";
+        if (keyword & 0x4ULL) return "_REMOTE";
+        if (keyword & 0x2ULL) return "_LOCAL_KERNEL_CALLER";
+        if (keyword & 0x1ULL) return "_LOCAL";
+        break;
+    case 2: /* PROTECTVM — bits 0x10/0x20/0x40/0x80 */
+        if (keyword & 0x80ULL) return "_REMOTE_KERNEL_CALLER";
+        if (keyword & 0x40ULL) return "_REMOTE";
+        if (keyword & 0x20ULL) return "_LOCAL_KERNEL_CALLER";
+        if (keyword & 0x10ULL) return "_LOCAL";
+        break;
+    case 3: /* MAPVIEW — bits 0x100/0x200/0x400/0x800 */
+        if (keyword & 0x800ULL) return "_REMOTE_KERNEL_CALLER";
+        if (keyword & 0x400ULL) return "_REMOTE";
+        if (keyword & 0x200ULL) return "_LOCAL_KERNEL_CALLER";
+        if (keyword & 0x100ULL) return "_LOCAL";
+        break;
+    case 4: /* QUEUEUSERAPC — bits 0x1000/0x2000 (remote only) */
+        if (keyword & 0x2000ULL) return "_REMOTE_KERNEL_CALLER";
+        if (keyword & 0x1000ULL) return "_REMOTE";
+        break;
+    case 5: /* SETTHREADCONTEXT — bits 0x4000/0x8000 (remote only) */
+        if (keyword & 0x8000ULL) return "_REMOTE_KERNEL_CALLER";
+        if (keyword & 0x4000ULL) return "_REMOTE";
+        break;
+    case 6: /* READVM — bits 0x10000/0x20000 */
+        if (keyword & 0x20000ULL) return "_REMOTE";
+        if (keyword & 0x10000ULL) return "_LOCAL";
+        break;
+    case 7: /* WRITEVM — bits 0x40000/0x80000 */
+        if (keyword & 0x80000ULL) return "_REMOTE";
+        if (keyword & 0x40000ULL) return "_LOCAL";
+        break;
+    case 8: /* SUSPENDRESUME_THREAD — bits 0x100000/0x200000 */
+        if (keyword & 0x200000ULL) return "_RESUME";
+        if (keyword & 0x100000ULL) return "_SUSPEND";
+        break;
+    case 9: /* SUSPENDRESUME_PROCESS — bits 0x400000/0x800000/0x1000000/0x2000000 */
+        if (keyword & 0x2000000ULL) return "_THAW";
+        if (keyword & 0x1000000ULL) return "_FREEZE";
+        if (keyword & 0x800000ULL)  return "_RESUME";
+        if (keyword & 0x400000ULL)  return "_SUSPEND";
+        break;
+    default:
+        break;
+    }
+    return "";
 }
 
 // ============================================================================
@@ -334,18 +365,13 @@ void EtwConsumer::OnEvent(PEVENT_RECORD er)
     ev.timestamp.dwLowDateTime  = er->EventHeader.TimeStamp.LowPart;
     ev.timestamp.dwHighDateTime = static_cast<DWORD>(er->EventHeader.TimeStamp.HighPart);
     ev.eventId = er->EventHeader.EventDescriptor.Id;
+    ev.task    = er->EventHeader.EventDescriptor.Task;
+    ev.keyword = er->EventHeader.EventDescriptor.Keyword;
     ev.pid     = er->EventHeader.ProcessId;
     ev.tid     = er->EventHeader.ThreadId;
 
-    /* Event name from our table; fall back to "ETW_TI_<id>" */
-    const char* knownName = EtwTiEventName(ev.eventId);
-    if (knownName) {
-        ev.name = knownName;
-    } else {
-        char tmp[32];
-        snprintf(tmp, sizeof(tmp), "ETW_TI_%u", (unsigned)ev.eventId);
-        ev.name = tmp;
-    }
+    /* Build the full event name from Task (operation category) + Keyword (variant suffix) */
+    ev.name = std::string(TaskToString(ev.task)) + KeywordToSuffix(ev.task, ev.keyword);
 
     /* Decode properties using TDH */
     ULONG infoSz = 0;
@@ -355,15 +381,6 @@ void EtwConsumer::OnEvent(PEVENT_RECORD er)
         auto* info = reinterpret_cast<PTRACE_EVENT_INFO>(infoBuf.data());
 
         if (TdhGetEventInformation(er, 0, nullptr, info, &infoSz) == ERROR_SUCCESS) {
-
-            /* If TDH knows the event name and we don't, use it */
-            if (!knownName && info->EventNameOffset != 0) {
-                const wchar_t* wn = reinterpret_cast<const wchar_t*>(
-                    reinterpret_cast<BYTE*>(info) + info->EventNameOffset);
-                char narrow[128] = {};
-                WideCharToMultiByte(CP_UTF8, 0, wn, -1, narrow, sizeof(narrow) - 1, nullptr, nullptr);
-                if (narrow[0]) ev.name = narrow;
-            }
 
             /* Iterate top-level properties */
             for (ULONG i = 0; i < info->TopLevelPropertyCount; i++) {

@@ -647,11 +647,11 @@ ULONGLONG ImGuiApp::BuildKeywordMask(const std::vector<KeywordEntry>& kw) {
 
 RowColor ImGuiApp::ClassifyEvent(const TiEvent& ev) {
     const char* n = ev.name.c_str();
+    /* Check kernel-caller remote first (more specific than plain _REMOTE) */
     if (strstr(n, "_REMOTE_KERNEL_CALLER")) return RowColor::RemoteKernelCaller;
     if (strstr(n, "_REMOTE"))               return RowColor::Remote;
-    if (strncmp(n, "SUSPEND_",  8)  == 0 ||
-        strncmp(n, "FREEZE_",   7)  == 0 ||
-        strncmp(n, "PROCESS_IMPERSONATION_", 22) == 0)
+    /* Suspend/resume/freeze/thaw (task 8 or 9) and impersonation */
+    if (ev.task == 8 || ev.task == 9 || strstr(n, "IMPERSONATION"))
         return RowColor::Suspicious;
     return RowColor::Default;
 }

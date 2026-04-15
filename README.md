@@ -66,7 +66,7 @@ kd> g
 │  Kernel                                                              │
 │                                                                      │
 │  ntoskrnl.exe — ETW-TI instrumentation                               │
-│    EtwTiLogAllocateVirtualMemory() ─────────────────────────────►   │
+│    EtwTiLogAllocateVirtualMemory() ─────────────────────────────►    │
 │    EtwTiLogProtectVirtualMemory()     ETW real-time session          │
 │    EtwTiLogMapViewOfSection()         "EtwTiViewerSession"           │
 │                                                                      │
@@ -149,7 +149,8 @@ EtwTiSuite/
 
 ```cmd
 # 1. Clone ImGui (docking branch)
-cd EtwTiSuite\third_party
+mkdir third_party
+cd third_party
 git clone --branch docking https://github.com/ocornut/imgui.git imgui
 
 # 2. Enable test-signing (VM only) and reboot

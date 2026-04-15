@@ -20,6 +20,8 @@
 struct TiEvent {
     FILETIME    timestamp;
     uint16_t    eventId;
+    uint16_t    task;     /* EVENT_DESCRIPTOR.Task  — operation category (1=ALLOCVM, 2=PROTECTVM, …) */
+    uint64_t    keyword;  /* EVENT_DESCRIPTOR.Keyword bitmask — LOCAL/REMOTE/KERNEL_CALLER variant   */
     uint32_t    pid;
     uint32_t    tid;
     std::string name;

@@ -60,13 +60,15 @@ typedef struct _ETWTI_STATUS_OUTPUT {
 
 #pragma pack(push, 1)
 typedef struct _PIPE_EVENT_HEADER {
-    UINT32  Magic;       /* must equal PIPE_EVENT_MAGIC               */
+    UINT32  Magic;       /* must equal PIPE_EVENT_MAGIC                        */
     UINT16  EventId;
+    UINT16  Task;        /* EVENT_DESCRIPTOR.Task  — operation category         */
+    UINT64  Keyword;     /* EVENT_DESCRIPTOR.Keyword bitmask (LOCAL/REMOTE/…)  */
     UINT32  Pid;
     UINT32  Tid;
-    UINT64  Timestamp;   /* FILETIME (100-ns intervals since 1601)    */
-    UINT16  NameLen;     /* byte count of UTF-8 event name that follows */
-    UINT16  FieldsLen;   /* byte count of fields blob that follows    */
+    UINT64  Timestamp;   /* FILETIME (100-ns intervals since 1601)              */
+    UINT16  NameLen;     /* byte count of UTF-8 event name that follows        */
+    UINT16  FieldsLen;   /* byte count of fields blob that follows             */
 } PIPE_EVENT_HEADER, *PPIPE_EVENT_HEADER;
 #pragma pack(pop)
 
